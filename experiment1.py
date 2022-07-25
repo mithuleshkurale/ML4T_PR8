@@ -12,7 +12,7 @@ def author():
 def generate_insample_strategy_manual_benchmark_graph(port_vals_manual_normalized, port_vals_benchmark_normalized,
                                              port_vals_learner_normalized):
     df_temp = pd.concat([port_vals_manual_normalized, port_vals_benchmark_normalized, port_vals_learner_normalized],
-                        keys=['Manual Strategy Normalized', 'Benchmark Normalized', 'Strategy Q Learner'],
+                        keys=['Manual Strategy Normalized', 'Benchmark Normalized', 'Strategy Q Learner Normalized'],
                         axis=1)
     ax = df_temp.plot(kind='line', y='Manual Strategy Normalized', color='red')
     df_temp.plot(kind='line', y='Benchmark Normalized', color='purple', ax=ax)
@@ -29,7 +29,7 @@ def generate_insample_strategy_manual_benchmark_graph(port_vals_manual_normalize
 def generate_outsample_strategy_manual_benchmark_graph(port_vals_manual_normalized, port_vals_benchmark_normalized,
                                               port_vals_learner_normalized):
     df_temp = pd.concat([port_vals_manual_normalized, port_vals_benchmark_normalized, port_vals_learner_normalized],
-                        keys=['Manual Strategy Normalized', 'Benchmark Normalized', 'Strategy Q Learner'],
+                        keys=['Manual Strategy Normalized', 'Benchmark Normalized', 'Strategy Q Learner Normalized'],
                         axis=1)
     ax = df_temp.plot(kind='line', y='Manual Strategy Normalized', color='red')
     df_temp.plot(kind='line', y='Benchmark Normalized', color='purple', ax=ax)
@@ -45,66 +45,67 @@ def generate_outsample_strategy_manual_benchmark_graph(port_vals_manual_normaliz
 
 def inSample_Strategy_Manual_Benchmark():
     # Manual
-    manual_trades_df = man_strat.testPolicy(symbol="JPM", sd=dt.datetime(2008, 1, 1), ed=dt.datetime(2009, 12, 31),
+    manual_learner = man_strat.ManualStrategy(verbose=False, impact=0.005, commission=9.95)
+    manual_trades_df = manual_learner.testPolicy(symbol="JPM", sd=dt.datetime(2008, 1, 1), ed=dt.datetime(2009, 12, 31),
                                             sv=100000)
     portvals_manual = ms.compute_portvals(manual_trades_df, symbols=["JPM"], startDate=dt.datetime(2008, 1, 1),
                                           endDate=dt.datetime(2009, 12, 31), start_val=100000, commission=9.95,
                                           impact=0.005)
 
-    port_vals_manual_normalized = portvals_manual / portvals_manual.iloc[0, 0]
+    port_vals_manual_normalized = portvals_manual / portvals_manual[0]
 
     # Benchmark
-    benchMarkTrades_DF = man_strat.benchMark(symbol=["JPM"], sd=dt.datetime(2008, 1, 1), ed=dt.datetime(2009, 12, 31))
+    benchMarkTrades_DF = manual_learner.benchMark(symbol=["JPM"], sd=dt.datetime(2008, 1, 1), ed=dt.datetime(2009, 12, 31))
     port_vals_benchmark = ms.compute_portvals(benchMarkTrades_DF, symbols=["JPM"], startDate=dt.datetime(2008, 1, 1),
                                               endDate=dt.datetime(2009, 12, 31), start_val=100000, commission=9.95,
                                               impact=0.005)
 
-    port_vals_benchmark_normalized = port_vals_benchmark / port_vals_benchmark.iloc[0, 0]
+    port_vals_benchmark_normalized = port_vals_benchmark / port_vals_benchmark[0]
 
     # Strategy
-    learner = strat_learner.StrategyLearner(verbose=False, impact=9.95, commission=0.005)
+    learner = strat_learner.StrategyLearner(verbose=False, impact=0.005, commission=9.95)
     learner.add_evidence(symbol="JPM", sd=dt.datetime(2008, 1, 1), ed=dt.datetime(2009, 12, 31), sv=100000)
     trades_df = learner.testPolicy(symbol="JPM", sd=dt.datetime(2008, 1, 1), ed=dt.datetime(2009, 12, 31), sv=100000)
     portvals_learner = ms.compute_portvals(trades_df, symbols=["JPM"], startDate=dt.datetime(2008, 1, 1),
                                            endDate=dt.datetime(2009, 12, 31), start_val=100000, commission=9.95,
                                            impact=0.005)
-    port_vals_learner_normalized = portvals_learner / portvals_learner.iloc[0, 0]
+    port_vals_learner_normalized = portvals_learner / portvals_learner[0]
 
     # generate chart
-    generate_insample_strategy_manual_benchmark_graph(port_vals_manual_normalized, port_vals_benchmark_normalized,
-                                             port_vals_learner_normalized)
+    generate_insample_strategy_manual_benchmark_graph(port_vals_manual_normalized.to_frame(), port_vals_benchmark_normalized.to_frame(),
+                                             port_vals_learner_normalized.to_frame())
 
 
 def outSample_Strategy_Manual_Benchmark():
     # Manual
-    manual_trades_df = man_strat.testPolicy(symbol="JPM", sd=dt.datetime(2010, 1, 1), ed=dt.datetime(2011, 12, 31),
+    manual_learner = man_strat.ManualStrategy(verbose=False, impact=0.005, commission=9.95)
+    manual_trades_df = manual_learner.testPolicy(symbol="JPM", sd=dt.datetime(2010, 1, 1), ed=dt.datetime(2011, 12, 31),
                                             sv=100000)
     portvals_manual = ms.compute_portvals(manual_trades_df, symbols=["JPM"], startDate=dt.datetime(2010, 1, 1),
-                                          endDate=dt.datetime(2011, 12, 31), start_val=100000, commission=9.95,
-                                          impact=0.005)
+                                          endDate=dt.datetime(2011, 12, 31), start_val=100000, commission=9.95, impact=0.005)
 
-    port_vals_manual_normalized = portvals_manual / portvals_manual.iloc[0, 0]
+    port_vals_manual_normalized = portvals_manual / portvals_manual[0]
 
     # Benchmark
-    benchMarkTrades_DF = man_strat.benchMark(symbol=["JPM"], sd=dt.datetime(2010, 1, 1), ed=dt.datetime(2011, 12, 31))
+    benchMarkTrades_DF = manual_learner.benchMark(symbol=["JPM"], sd=dt.datetime(2010, 1, 1), ed=dt.datetime(2011, 12, 31))
     port_vals_benchmark = ms.compute_portvals(benchMarkTrades_DF, symbols=["JPM"], startDate=dt.datetime(2010, 1, 1),
                                               endDate=dt.datetime(2011, 12, 31), start_val=100000, commission=9.95,
                                               impact=0.005)
 
-    port_vals_benchmark_normalized = port_vals_benchmark / port_vals_benchmark.iloc[0, 0]
+    port_vals_benchmark_normalized = port_vals_benchmark / port_vals_benchmark[0]
 
     # Strategy
-    learner = strat_learner.StrategyLearner(verbose=False, impact=9.95, commission=0.005)
+    learner = strat_learner.StrategyLearner(verbose=False, impact=0.005, commission=9.95)
     learner.add_evidence(symbol="JPM", sd=dt.datetime(2010, 1, 1), ed=dt.datetime(2011, 12, 31), sv=100000)
     trades_df = learner.testPolicy(symbol="JPM", sd=dt.datetime(2010, 1, 1), ed=dt.datetime(2011, 12, 31), sv=100000)
     portvals_learner = ms.compute_portvals(trades_df, symbols=["JPM"], startDate=dt.datetime(2010, 1, 1),
                                            endDate=dt.datetime(2011, 12, 31), start_val=100000, commission=9.95,
                                            impact=0.005)
-    port_vals_learner_normalized = portvals_learner / portvals_learner.iloc[0, 0]
+    port_vals_learner_normalized = portvals_learner / portvals_learner[0]
 
     # generate chart
-    generate_outsample_strategy_manual_benchmark_graph(port_vals_manual_normalized, port_vals_benchmark_normalized,
-                                              port_vals_learner_normalized)
+    generate_outsample_strategy_manual_benchmark_graph(port_vals_manual_normalized.to_frame(), port_vals_benchmark_normalized.to_frame(),
+                                              port_vals_learner_normalized.to_frame())
 
 def run():
     inSample_Strategy_Manual_Benchmark()

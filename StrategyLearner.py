@@ -28,13 +28,10 @@ GT ID: 900897987 (replace with your GT ID)
 """
 
 import datetime as dt
-import random
 
-import pandas as pd
 import util as ut
 import QLearner as qLearner
-from indicators_new import *
-import marketsimcode as ms
+from indicators import *
 
 
 class StrategyLearner(object):
@@ -66,9 +63,7 @@ class StrategyLearner(object):
                                           radr=0.999,
                                           dyna=0,
                                           verbose=False)
-        #self.best_pos = {}
-        self.prev_cum_ret_percent = 0
-        self.df_trades_copy = pd.DataFrame()
+        self.orderDF_copy = pd.DataFrame()
 
     def author(self):
         return "mkurale3"
@@ -94,69 +89,74 @@ class StrategyLearner(object):
         :type sv: int  		  	   		  	  			  		 			 	 	 		 		 	 		 		 	 		  	 	 			  	 
         """
 
-        # add your code to do learning here  		  	   		  	  			  		 			 	 	 		 		 	 		 		 	 		  	 	 			  	 
-
-        # example usage of the old backward compatible util function  		  	   		  	  			  		 			 	 	 		 		 	 		 		 	 		  	 	 			  	 
         syms = [symbol]
         dates = pd.date_range(sd, ed)
-        prices_all = ut.get_data(syms,
-                                 dates)  # automatically adds SPY
-        prices = prices_all[
-            syms]  # only portfolio symbols
-        prices_SPY = prices_all[
-            "SPY"]  # only SPY, for comparison later
+        prices_all = ut.get_data(syms, dates)  # automatically adds SPY
+        prices = prices_all[syms]  # only portfolio symbols
+        prices_SPY = prices_all["SPY"]  # only SPY, for comparison later
         if self.verbose:
             print(prices)
 
         prices = prices.fillna(method="ffill").fillna(method="bfill")
         pricesDF_norm = prices / prices.iloc[0]
+
+        # indicator 1: price/sma
         price_sma = getSimpleMovingAverage(pricesDF_norm, syms)
-        upper_bol_band, lower_bol_band = getBollingerBands(pricesDF_norm, syms)
+        price_sma = price_sma.drop(symbol, axis=1)
+
+        # indicator 2: Upper/Lower bollinger bands
+        bbp = getBollingerBandsPercent(pricesDF_norm, syms)
+
+        # indicator 3: Momentum
         momentum = getMomentum(pricesDF_norm, syms)
-        # daily_returns_df = getDailyReturns(pricesDF_norm)
 
-        orders = pd.DataFrame(0, index=pricesDF_norm.index, columns=['Shares'])
+        # concat the indicators to one data frame
+        indicators_df = pd.concat((price_sma, bbp, momentum), axis=1)
 
-        df_trades = pd.concat([orders], axis=1)
-        df_trades.columns = ['Trades']
-
-        self.df_trades_copy = df_trades.copy()
-        indicators_df = pd.concat((price_sma, upper_bol_band, lower_bol_band, momentum), axis=1)
+        # pass the indicators df to discretize. Will return a df with discretized values
         discretized_states_df = self.discretize(indicators_df)
 
-        # get the initial state by discretizing indicators
+        # create a copy of orderDF. This will be used to determine if convergence has occurred
+        self.orderDF_copy = pd.DataFrame(0, index=pricesDF_norm.index, columns=['Trades'])
+
         hasNotConverged = True
         j = -1
-        while hasNotConverged and j<200:
+        while hasNotConverged and j < 300:
             init_pos = (sv, 0, [])  # cash, shares, [transactions]
             positions = [init_pos]
-            j+=1;
-            print(j)
-            #self.best_pos = {}
+            j += 1;
+
             for day, date in enumerate(indicators_df.index):
                 additional_pos = []
                 price = prices.loc[date][symbol]
                 for pos in positions:
                     if date == indicators_df.index[0]:
-                        # On day 1 there is no reward only action of buy or sell shares
+                        # On day 1 there is no daily return reward only action of buy or sell shares
                         initial_state = discretized_states_df[date]
                         action = self.qLearner.querysetstate(initial_state) - 1
                     else:
                         # Every day after day 1 you have daily return rewards
                         prev_price = pricesDF_norm[symbol].iloc[day - 1]
                         curr_price = pricesDF_norm[symbol].loc[date]
-                        reward = pos[1] * ((curr_price / prev_price) - 1) * (1 - self.impact)
+                        reward = pos[1] * ((curr_price / prev_price) - 1)
                         state = discretized_states_df[date]
-                        action = self.qLearner.query(state, reward)-1
+                        action = self.qLearner.query(state, reward) - 1
 
+                    """
+                    action = -1: Sell 1k, 2K
+                    action = 0: Do nothing
+                    action = 1: Buy 1K, 2K
+                    
+                    Will implement the action based on the query result
+                    """
                     if action == 1:
-                        list_new_pos = self.implmentAction(pos, price, [1000, 2000, 0])
+                        list_new_pos = self.implmentAction(pos, price, [1000, 2000, 0], 'buy', self.impact, self.commission)
                         additional_pos.extend(list_new_pos)
                     elif action == -1:
-                        list_new_pos = self.implmentAction(pos, price, [-2000, -1000, 0])
+                        list_new_pos = self.implmentAction(pos, price, [-2000, -1000, 0], 'buy', self.impact, self.commission)
                         additional_pos.extend(list_new_pos)
                     else:
-                        list_new_pos = self.implmentAction(pos, price, [0])
+                        list_new_pos = self.implmentAction(pos, price, [0], 'do nothing', self.impact, self.commission)
                         additional_pos.extend(list_new_pos)
 
                 positions = self.determineBestPositions(additional_pos)
@@ -175,32 +175,17 @@ class StrategyLearner(object):
             ordersDF = pd.DataFrame(max_position[2], columns=['Trades'])
             ordersDF['Date'] = prices.index
             ordersDF = ordersDF.set_index('Date')
-            hasNotConverged = not(self.determineConvergence(ordersDF, syms, sd, ed, sv, self.commission, self.impact))
+            hasNotConverged = not (self.determineConvergence(ordersDF))
 
-        if (j==200):
-            print("j reached 200")
+        if (j == 400):
+            print("j reached 400")
 
-            #return ordersDF
-
-    def determineConvergence(self, ordersDF, syms, sd, ed, sv, comm, impact):
-        # portvals = ms.compute_portvals(ordersDF, symbols=syms, startDate=sd,
-        #                                endDate=ed, start_val=sv, commission=comm, impact=impact)
-        # port_vals_normalized = portvals / portvals.iloc[0, 0]
-        # if isinstance(port_vals_normalized, pd.DataFrame):
-        #     port_vals_normalized = port_vals_normalized[port_vals_normalized.columns[0]]  # just get the first column
-        # else:
-        #     raise Exception("warning, code did not return a DataFrame")
-        # cum_ret = (port_vals_normalized[-1] / port_vals_normalized[0]) - 1
-        # cum_ret_percent = cum_ret * 100
-        # if (abs(self.prev_cum_ret_percent - cum_ret_percent) < 1):
-        #     print("converged")
-        #     return True
-        # else:
-        #     self.prev_cum_ret_percent = cum_ret_percent
-        if ordersDF.equals(self.df_trades_copy):
+    def determineConvergence(self, ordersDF):
+        if ordersDF.equals(self.orderDF_copy):
+            print("converged")
             return True
         else:
-            self.df_trades_copy = ordersDF.copy()
+            self.orderDF_copy = ordersDF.copy()
 
         return False
 
@@ -217,13 +202,19 @@ class StrategyLearner(object):
 
         return list(best_pos.values())
 
-    def implmentAction(self, pos, price, trades_allowed):
+    def implmentAction(self, pos, price, trades_allowed, action, impact, commission):
         additional_pos = []
         for trades in trades_allowed:
             new_shares = pos[1] + trades
-            if new_shares not in [-1000, 0, 1000]:
+            if new_shares not in [-1000, 0, 1000]: #we can only have net positions of -1k, 0, 1K
                 continue
-            new_cash_holding = pos[0] - trades * price
+            if action == 'buy' and trades!=0:
+                new_cash_holding = pos[0] - (trades * (price+impact) - commission)
+            elif action=='sell' and trades!=0:
+                new_cash_holding = pos[0] - (trades * (price-impact) - commission)
+            else:
+                new_cash_holding = pos[0]
+
             newOrder_transactions = pos[2] + [trades]
             new_pos = (new_cash_holding, new_shares, newOrder_transactions)
             additional_pos.append(new_pos)
@@ -232,12 +223,12 @@ class StrategyLearner(object):
 
     def discretize(self, data):
 
-        upper_bol_bands = pd.cut(data['UPPER_BOL_BAND'], 10, labels=False)
-        lower_bol_bands = pd.cut(data['LOWER_BOL_BAND'], 10, labels=False)
-        price_sma = pd.cut(data['PRICE_SMA'], 10, labels=False)
+        percent_bol_bands = pd.cut(data['PERCENT_BOL_BAND'], 10, labels=False)
+        price_20_sma = pd.cut(data['20_SMA'], 10, labels=False)
+        price_50_sma = pd.cut(data['50_SMA'], 10, labels=False)
         momentum = pd.cut(data['MOMENTUM'], 10, labels=False)
 
-        return (upper_bol_bands * 1000) + (lower_bol_bands * 100) + (price_sma * 10) + momentum
+        return (percent_bol_bands * 1000) + (price_20_sma * 100) + (price_50_sma * 10) + (momentum * 1)
 
     # this method should use the existing policy and test it against new data
 
@@ -283,11 +274,11 @@ class StrategyLearner(object):
         prices = prices.fillna(method="ffill").fillna(method="bfill")
         pricesDF_norm = prices / prices.iloc[0]
         price_sma = getSimpleMovingAverage(pricesDF_norm, syms)
-        upper_bol_band, lower_bol_band = getBollingerBands(pricesDF_norm, syms)
+        bbp = getBollingerBandsPercent(pricesDF_norm, syms)
         momentum = getMomentum(pricesDF_norm, syms)
         # daily_returns_df = getDailyReturns(pricesDF_norm)
 
-        indicators_df = pd.concat((price_sma, upper_bol_band, lower_bol_band, momentum), axis=1)
+        indicators_df = pd.concat((price_sma, bbp, momentum), axis=1)
         discretized_states_df = self.discretize(indicators_df)
         init_pos = (sv, 0, [])  # cash, shares, [transactions]
         positions = [init_pos]
@@ -302,19 +293,17 @@ class StrategyLearner(object):
                     action = self.qLearner.querysetstate(state) - 1
                 else:
                     # Every day after day 1 you have daily return rewards
-                    prev_price = pricesDF_norm[symbol].iloc[day - 1]
-                    curr_price = pricesDF_norm[symbol].loc[date]
-                    reward = pos[1] * ((curr_price / prev_price) - 1) * (1 - self.impact)
                     action = self.qLearner.querysetstate(state) - 1
 
                 if action == 1:
-                    list_new_pos = self.implmentAction(pos, price, [1000, 2000, 0])
+                    list_new_pos = self.implmentAction(pos, price, [1000, 2000, 0], 'buy', self.impact, self.commission)
                     additional_pos.extend(list_new_pos)
                 elif action == -1:
-                    list_new_pos = self.implmentAction(pos, price, [-2000, -1000, 0])
+                    list_new_pos = self.implmentAction(pos, price, [-2000, -1000, 0], 'sell', self.impact,
+                                                       self.commission)
                     additional_pos.extend(list_new_pos)
                 else:
-                    list_new_pos = self.implmentAction(pos, price, [0])
+                    list_new_pos = self.implmentAction(pos, price, [0], 'do nothing', self.impact, self.commission)
                     additional_pos.extend(list_new_pos)
 
             positions = self.determineBestPositions(additional_pos)
@@ -338,9 +327,9 @@ class StrategyLearner(object):
 
 
 if __name__ == "__main__":
-    # learner = StrategyLearner(verbose=False, impact=9.95, commission=0.005)  # constructor
-    # learner.add_evidence(symbol="AAPL", sd=dt.datetime(2008, 1, 1), ed=dt.datetime(2009, 12, 31),
-    #                      sv=100000)  # training phase
+    learner = StrategyLearner(verbose=False, impact=.005, commission=9.95)  # constructor
+    learner.add_evidence(symbol="AAPL", sd=dt.datetime(2008, 1, 1), ed=dt.datetime(2009, 12, 31),
+                         sv=100000)  # training phase
     print("One does not simply think up a strategy")
 
     # if (action == -1) and (total_holdings < 1000):

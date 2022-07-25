@@ -32,7 +32,7 @@ def graphThePortVals(normalized_portvals):
     plt.close()
 
 
-def experiment2():
+def run():
     impacts = [1.0, .4, .06, .007]
     normalized_portvals = []
     for impact in impacts:
@@ -40,12 +40,16 @@ def experiment2():
         learner.add_evidence(symbol="JPM", sd=dt.datetime(2008, 1, 1), ed=dt.datetime(2009, 12, 31), sv=100000)
         trades_df = learner.testPolicy(symbol="JPM", sd=dt.datetime(2008, 1, 1), ed=dt.datetime(2009, 12, 31),
                                        sv=100000)
+
+        number_of_trades = trades_df[trades_df["Trades"]!=0].shape[0]
+        print("Impact: " + str(impact) + " number of trades are: " + str(number_of_trades))
+
         portvals_learner = ms.compute_portvals(trades_df, symbols=["JPM"], startDate=dt.datetime(2008, 1, 1),
                                                endDate=dt.datetime(2009, 12, 31), start_val=100000, commission=9.95,
                                                impact=impact)
 
-        port_vals_learner_normalized = portvals_learner / portvals_learner.iloc[0, 0]
-        normalized_portvals.append([impact, port_vals_learner_normalized]);
+        port_vals_learner_normalized = portvals_learner / portvals_learner[0]
+        normalized_portvals.append([impact, port_vals_learner_normalized.to_frame()]);
 
     graphThePortVals(normalized_portvals)
     calc_stats(normalized_portvals)
@@ -116,4 +120,4 @@ def calc_stats(normalized_portvals):
 
 
 if __name__ == "__main__":
-    experiment2()
+    run()

@@ -64,34 +64,18 @@ def compute_portvals(
 
     pricesDF = get_data(symbols, pd.date_range(startDate, endDate))
     pricesDF["Cash"] = 1
+    pricesDF = pricesDF.drop("SPY", axis=1)
 
     # Step 4: Populate the trades data frame
     tradesDF = populateTradesDataFrame(tradesMadeDF, pricesDF, commission, impact, symbols)
 
     # Step 5: Populate the holdings data
     holdingsDF = populateHoldingsDataFrame(tradesDF, start_val, symbols)
-    portVals = computePortVals(pricesDF, holdingsDF)
-    portVals = portVals.set_index('Date')
+    holdingsDF = holdingsDF.set_index("Date")
+    valueDf = pricesDF * holdingsDF
+    portVals = valueDf.sum(axis=1)
 
     return portVals
-
-
-def computePortVals(pricesDF, holdingsDF):
-    symbols = holdingsDF.columns[1:-1]
-    holdingsDF["PortVal"] = 0
-
-    for i in range(len(holdingsDF)):
-        # for each row in orders fetch the column data
-        val = 0
-        date = holdingsDF.loc[i, "Date"]
-        cash = holdingsDF.loc[i, "Cash"]
-
-        for sym in symbols:
-            val = val + (pricesDF.loc[date, sym] * holdingsDF.loc[i, sym])
-        val += cash
-        holdingsDF.loc[i, "PortVal"] = val
-
-    return holdingsDF[["Date", "PortVal"]]
 
 
 def populateTradesDataFrame(tradesMadeDF, pricesDF, commission, impact, symbols):
@@ -124,7 +108,7 @@ def populateTradesDataFrame(tradesMadeDF, pricesDF, commission, impact, symbols)
 
 
 def createNewRowToInsert(tradesOnDate_DF, symbols, date):
-    totalCashEarningsOnTradeDate = tradesOnDate_DF["Cash"].sum()
+    totalCashEarningsOnTradeDate = tradesOnDate_DF["Cash"].sum(axis=0)
     shareCountForEachStock = []
     newRowToAppend = []
     for sym in symbols:
